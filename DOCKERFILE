@@ -1,45 +1,35 @@
 # Use an official PyTorch image with CUDA support as the base
-# Matches requirements: Python 3.8+, PyTorch 2.0+
 FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
 
 # Metadata
 LABEL maintainer="Aditya Mishra"
 LABEL version="1.0.0"
-LABEL description="Device Segmentation Production Pipeline"
 
 # Set environment variables
-# PYTHONDONTWRITEBYTECODE: Prevents Python from writing pyc files to disc
-# PYTHONUNBUFFERED: Prevents Python from buffering stdout and stderr
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Set the working directory in the container
+# Set work directory
 WORKDIR /app
 
-# Install system dependencies required for OpenCV and essential tools
-# libgl1-mesa-glx and libglib2.0-0 are required even for headless OpenCV in some base images
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file first to leverage Docker cache layer
+# Copy requirements and install
 COPY requirements.txt .
-
-# Install Python dependencies
-# --no-cache-dir reduces image size
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# --- CRITICAL FIX: Pre-download YOLO weights for offline support ---
+RUN pip install ultralytics && python -c "from ultralytics import YOLO; YOLO('yolo11n-seg.pt')"
+# -----------------------------------------------------------------
+
+# Copy application code
 COPY . .
 
-# Create directories for outputs to prevent permission errors at runtime
+# Create output directories
 RUN mkdir -p /app/logs /app/models /app/images /app/masks
 
-# Expose port if you wrap this in an API later (Optional, typically 8000)
-# EXPOSE 8000
-
-# Default command
-# This runs the training pipeline by default.
-# Can be overridden to run inference: docker run ... python inference.py
 CMD ["python", "train.py"]
