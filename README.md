@@ -1,4 +1,3 @@
-````markdown
 # Production Device Segmentation Pipeline
 
 This repository contains a production-grade Deep Learning pipeline for semantic segmentation of medical devices (patches) on human skin. It features a modular architecture designed for reproducibility, incorporating a "Smart Cropping" stage (YOLO) followed by high-precision segmentation (Unet++).
@@ -155,5 +154,4 @@ After running `train.py`, the `WORK_DIR` will contain:
 
 <!-- end list -->
 
-```
 ```
