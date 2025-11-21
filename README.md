@@ -12,14 +12,25 @@ This repository contains a production-grade Deep Learning pipeline for semantic 
 The codebase is strictly separated into Configuration, ETL, Modeling, Training, and Inference modules.
 
 ```text
-.
-├── config.py           # Central Configuration (Env Vars & Hyperparameters)
-├── dataset.py          # ETL: YOLO Smart Cropping, caching to disk, & Augmentation
-├── model.py            # Architecture Definition (Unet++) & ComboLoss
-├── train.py            # Training orchestration, Validation, & MLOps
-├── inference.py        # Standalone ONNX Inference Engine
-├── utils.py            # Utilities: Logging, Seeding, Metric Tracking
-└── requirements.txt    # Strict dependency versions
+
+│
+├── .github/
+│   └── workflows/
+│       └── checks.yml       # The CI/CD Pipeline
+│
+├── .dockerignore            # Docker exclusions
+├── .gitignore               # Git exclusions
+├── config.py                # Configuration
+├── CONTRIBUTING.md          # Contribution rules
+├── dataset.py               # ETL pipeline
+├── Dockerfile               # Container setup
+├── inference.py             # Inference engine
+├── LICENSE                  # AGPLv3 Text
+├── model.py                 # Model architecture
+├── README.md                # Documentation
+├── requirements.txt         # Dependencies
+├── train.py                 # Training script
+└── utils.py                 # Helper functions
 ````
 
 -----
