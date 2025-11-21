@@ -1,134 +1,159 @@
+````markdown
 # Production Device Segmentation Pipeline
 
-This repository contains a production-grade Deep Learning pipeline for semantic segmentation of medical devices (patches) on human skin. It features a hybrid architecture using YOLO for ROI localization (Smart Cropping) and Unet++ for high-precision segmentation.
+This repository contains a production-grade Deep Learning pipeline for semantic segmentation of medical devices (patches) on human skin. It features a modular architecture designed for reproducibility, incorporating a "Smart Cropping" stage (YOLO) followed by high-precision segmentation (Unet++).
 
-**Version:** 1.0.0
 **Status:** Production Ready
+**Python Version:** 3.8+
 
-## 📂 Project Structure
+---
 
-The codebase is modularized to support distinct lifecycle stages: ETL, Training, and Inference.
+## Project Structure
+
+The codebase is strictly separated into Configuration, ETL, Modeling, Training, and Inference modules.
 
 ```text
 .
-├── config.py           # Centralized configuration (Environment Variables supported)
-├── dataset.py          # ETL Pipeline: Smart Cropping (YOLO) & Augmentation
-├── model.py            # Model Architecture (Unet++) & Custom Loss Functions
-├── train.py            # Training Loop, Validation, and MLOps Logging
-├── inference.py        # ONNX Inference Engine (Standalone)
-├── utils.py            # Logging, Seeding, and Metric Tracking
-└── requirements.txt    # Dependency specifications
+├── config.py           # Central Configuration (Env Vars & Hyperparameters)
+├── dataset.py          # ETL: YOLO Smart Cropping, caching to disk, & Augmentation
+├── model.py            # Architecture Definition (Unet++) & ComboLoss
+├── train.py            # Training orchestration, Validation, & MLOps
+├── inference.py        # Standalone ONNX Inference Engine
+├── utils.py            # Utilities: Logging, Seeding, Metric Tracking
+└── requirements.txt    # Strict dependency versions
 ````
 
-## 🚀 Quick Start
+-----
 
-### 1\. Installation
+## Quick Start
 
-Ensure you have Python 3.8+ and a CUDA-capable GPU.
+### 1\. Prerequisites & Installation
+
+Ensure you have a CUDA-capable GPU.
 
 ```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2\. Training
+### 2\. Training the Model
 
-The training script handles data preprocessing, training, validation, and ONNX export automatically.
+The training pipeline (`train.py`) performs the following steps automatically:
 
-**Development Mode (Kaggle/Local):**
-Runs using the default hardcoded paths defined in `config.py`.
+1.  **Sanity Checks:** Verifies model architecture and augmentations.
+2.  **ETL:** Loads images/JSON, runs YOLO cropping, and **caches processed crops to disk** (to prevent RAM overflow).
+3.  **Training:** Runs 5-Fold Cross-Validation with `UnetPlusPlus`.
+4.  **Export:** Saves the best model as `device_segmentation.onnx`.
+
+**Option A: Development (Kaggle/Local Defaults)**
+Runs using the paths hardcoded as defaults in `config.py`.
 
 ```bash
 python train.py
 ```
 
-**Production Mode (Docker/Cloud):**
-Override paths using environment variables.
+**Option B: Production (Docker/Cloud)**
+Override specific paths using Environment Variables without changing the code.
 
 ```bash
-export RAW_IMG_DIR="/data/images"
-export RAW_JSON_PATH="/data/labels.json"
-export WORK_DIR="/output"
+# Example Overrides
+export RAW_IMG_DIR="/mnt/data/raw_images"
+export RAW_JSON_PATH="/mnt/data/annotations.json"
+export WORK_DIR="/mnt/output"
+export BATCH_SIZE="16"
+
 python train.py
 ```
 
-### 3\. Inference
+### 3\. Running Inference
 
-Run the standalone inference engine on new images using the exported ONNX model.
+The inference script (`inference.py`) is standalone. It uses the exported ONNX model and does not require the training libraries.
 
 ```bash
-python inference.py --test_dir /path/to/test/images --onnx_path /path/to/model.onnx
+# Run inference on a specific folder of images
+python inference.py \
+  --onnx_path /kaggle/working/prod_pipeline_v1/device_segmentation.onnx \
+  --test_dir /kaggle/input/sample3
 ```
 
-## 🧠 Algorithmic Methodology
+-----
 
-### 1\. Smart Preprocessing (The "Zoom-In" Strategy)
+## Technical Methodology
 
-To handle high-resolution inputs without losing fine-grained details, we employ a two-stage approach:
+### Stage 1: Smart Preprocessing (ETL)
 
-1.  **Person Detection:** A lightweight YOLO model (`yolo11n-seg`) detects the person in the frame.
-2.  **ROI Calculation:** The algorithm identifies the "Head Top" coordinate to dynamically calculate a Region of Interest (ROI) centered on the upper body.
-3.  **Crop & Pad:** The ROI is square-cropped and padded to preserve the aspect ratio before resizing to `512x512`.
+  * **Problem:** High-resolution images make small devices hard to detect if resized directly.
+  * **Solution:** We use **YOLOv11-seg** (`ultralytics`) to detect the person.
+  * **Logic:**
+    1.  Detect Person mask.
+    2.  Calculate the "Head Top" and torso center.
+    3.  Create a dynamic square ROI based on torso size.
+    4.  Crop, Pad, and Resize to `512x512`.
+    5.  **Memory Safety:** Crops are saved to `WORK_DIR/images` to keep RAM usage low.
 
-### 2\. Segmentation Model
+### Stage 2: Segmentation Network
 
-  * **Architecture:** Unet++ (Nested U-Net) for dense skip connections.
-  * **Encoder:** ResNet34 (Pretrained on ImageNet) for feature extraction.
-  * **Loss Function:** `ComboLoss` (50% Binary Cross Entropy + 50% Dice Loss).
-  * **Optimization:** AdamW with Cosine Annealing Warm Restarts.
+  * **Architecture:** `UnetPlusPlus` (Nested U-Net) which reduces the semantic gap between encoder and decoder.
+  * **Backbone:** `resnet34` (Pretrained on ImageNet).
+  * **Loss Function:** `ComboLoss`
+      * 50% **Dice Loss** (Optimizes Overlap/IoU)
+      * 50% **BCEWithLogitsLoss** (Optimizes Pixel Accuracy)
+  * **Optimization:** `AdamW` optimizer with `CosineAnnealingWarmRestarts` scheduler.
 
-### 3\. Test Time Augmentation (TTA)
+### Stage 3: Inference Logic
 
-During inference and validation, prediction stability is improved by averaging the output of the original image and its horizontally flipped version. This reduces variance and edge errors.
+  * **Engine:** `onnxruntime-gpu` for hardware-accelerated inference.
+  * **TTA (Test Time Augmentation):** During validation, predictions are averaged: $(Pred(x) + Pred(HorizontalFlip(x))) / 2$.
+  * **Adaptive Thresholding:** The inference engine dynamically scans thresholds (`0.5`, `0.3`, `0.15`) to maximize recall for difficult lighting conditions.
 
-$$P_{final} = \frac{Model(x) + Flip(Model(Flip(x)))}{2}$$
+-----
 
-## ⚙️ Configuration
+## Configuration Reference (`config.py`)
 
-All hyperparameters are defined in `config.py`. You can override paths using environment variables for containerized deployment.
+You can control these parameters via Environment Variables or by editing the default values in `config.py`.
 
-| Variable | Default (Kaggle) | Description |
+| Environment Variable | Description | Default Value |
 | :--- | :--- | :--- |
-| `RAW_IMG_DIR` | `/kaggle/input/...` | Directory containing raw images |
-| `RAW_JSON_PATH` | `/kaggle/input/...` | Path to Label Studio JSON file |
-| `WORK_DIR` | `/kaggle/working/...` | Output directory for logs/models |
-| `BATCH_SIZE` | `12` | Training batch size |
-| `INPUT_SIZE` | `512` | Input resolution (HxW) |
-| `ARCH` | `UnetPlusPlus` | Segmentation architecture |
-| `ENCODER` | `resnet34` | Backbone encoder |
+| `RAW_JSON_PATH` | Path to Label Studio annotation file | *(Kaggle Input Path)* |
+| `RAW_IMG_DIR` | Path to folder containing raw images | *(Kaggle Input Path)* |
+| `WORK_DIR` | Root path for outputs (models/logs) | `/kaggle/working/prod_pipeline_v1` |
+| `ARCH` | Segmentation Architecture | `UnetPlusPlus` |
+| `ENCODER` | Backbone Encoder | `resnet34` |
+| `INPUT_SIZE` | Image Input Resolution | `512` |
+| `BATCH_SIZE` | Training Batch Size | `12` |
+| `EPOCHS` | Total Training Epochs | `100` |
 
-## 📊 Metrics & Logging
+-----
 
-The pipeline automatically tracks metrics in `WORK_DIR/logs/`:
+## Output Artifacts
 
-  * **training.log**: System logs, error traces, and epoch summaries.
-  * **metrics.json**: Structured JSON data containing Training Loss and Validation IoU per epoch.
+After running `train.py`, the `WORK_DIR` will contain:
 
-**Performance Target:**
+1.  **`models/`**: Saved PyTorch weights (`.pth`) for each fold.
+2.  **`images/` & `masks/`**: The processed, cropped datasets used for training.
+3.  **`logs/`**:
+      * `training.log`: Detailed system logs.
+      * `metrics.json`: JSON formatted loss/IoU history for experiment tracking.
+4.  **`device_segmentation.onnx`**: The final production model ready for deployment.
 
-  * **Metric:** Jaccard Index (IoU)
-  * **Target:** \> 0.90 IoU on Validation set.
+-----
 
-## 🛠 Troubleshooting
+## Troubleshooting
 
-**1. "CUDA out of memory"**
+**1. Memory Errors (OOM)**
 
-  * Reduce `BATCH_SIZE` in `config.py`.
-  * Ensure `gc.collect()` is active in `dataset.py` (enabled by default).
+  * **Training:** Reduce `BATCH_SIZE` in `config.py`.
+  * **Preprocessing:** The `dataset.py` includes explicit `del` and `gc.collect()` calls. If kernel dies, ensure you have enough disk space in `WORK_DIR` for the cached images.
 
-**2. "No Patch Detected" in Inference**
+**2. ONNX Export Failed**
 
-  * The inference engine uses adaptive thresholding. If the model confidence is below 0.15, it will report no patch found. Check the lighting conditions of input images or model convergence.
+  * Ensure `model.py` logic matches the weights being loaded. The `export_to_onnx` function in `train.py` expects the model structure to define `classes=1` and `in_channels=3`.
 
-**3. "Kernel Stopping" / Crash**
+**3. Inference: "No Patch Detected"**
 
-  * The preprocessing step writes intermediate cropped images to disk to conserve RAM. Ensure your `WORK_DIR` has sufficient write permissions and storage space.
-
-## 📦 Deployment Notes
-
-  * **Docker:** The code is environment-agnostic. Mount your data volumes to the paths defined in `config.py` via `os.getenv`.
-  * **ONNX:** The training script automatically exports `device_segmentation.onnx`. This file allows deployment on Triton Inference Server or Edge devices without requiring the full PyTorch dependency tree.
+  * The logic strictly requires a confidence score \> 0.15. If the image is blurry or the patch is occluded, the adaptive thresholder will return a safe negative to avoid false positives.
 
 <!-- end list -->
 
-
+```
 ```
