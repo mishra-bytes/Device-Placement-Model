@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python / Environment
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+
+# IDE Settings
+.vscode/
+.idea/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Data & Models (NEVER build raw data or weights into the image)
+# We mount these at runtime using volumes instead
+/kaggle/
+raw_data/
+processed_data/
+*.pth
+*.onnx
+*.pt
+
+# Output Directories (Created dynamically)
+logs/
+models/
+images/
+masks/
+output/
+
+# System
+.DS_Store
+Thumbs.db
