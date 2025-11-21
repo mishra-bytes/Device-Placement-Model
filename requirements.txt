@@ -1,0 +1,13 @@
+numpy<2.0
+scikit-learn
+matplotlib
+tqdm
+opencv-python-headless==4.10.0.84
+torch
+torchvision
+torchmetrics
+ultralytics>=8.0.0
+segmentation-models-pytorch
+albumentations
+# Use onnxruntime-gpu for CUDA support, or onnxruntime for CPU only
+onnxruntime-gpu
