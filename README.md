@@ -1,6 +1,3 @@
-I apologize for the confusion. Here is the entire README content inside a single Markdown code block.
-
-````markdown
 # Production Device Segmentation Pipeline
 
 This repository contains a production-grade Deep Learning pipeline for semantic segmentation of medical devices (patches) on human skin. It features a hybrid architecture using YOLO for ROI localization (Smart Cropping) and Unet++ for high-precision segmentation.
@@ -133,5 +130,5 @@ The pipeline automatically tracks metrics in `WORK_DIR/logs/`:
 
 <!-- end list -->
 
-```
+
 ```
