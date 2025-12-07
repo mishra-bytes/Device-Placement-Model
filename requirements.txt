@@ -11,3 +11,5 @@ segmentation-models-pytorch
 albumentations
 # Use onnxruntime-gpu for CUDA support, or onnxruntime for CPU only
 onnxruntime-gpu
+ipykernel 
+seaborn
